@@ -61,6 +61,10 @@ def sync_notion_to_json():
 
     tasks = load_tasks_from_json('tasks.json')
     tasks_dict = {task['notion-id']: task for task in tasks}
+    
+    # Get Todoist tasks once at the beginning
+    existing_todoist_tasks = get_todoist_tasks()
+    completed_todoist_tasks = get_completed_todoist_tasks()
 
     notion_task_ids = set()
 
@@ -101,11 +105,8 @@ def sync_notion_to_json():
                 task_data['last_modified'] = datetime.now(timezone.utc).astimezone(GMT_PLUS_8).isoformat()
 
         else:
-            # Create a task in Todoist and get the task ID
-            existing_tasks = get_todoist_tasks()
-            completed_tasks = get_completed_todoist_tasks()
-
-            todoist_task_id, is_completed = create_todoist_task(task_name, existing_tasks, completed_tasks)
+            # Create a task in Todoist and get the task ID - using the pre-fetched lists
+            todoist_task_id, is_completed = create_todoist_task(task_name, existing_todoist_tasks, completed_todoist_tasks)
             if todoist_task_id is None and is_completed:
                 task_completed = True
                 update_notion_task_status(task_id, True)
