@@ -81,8 +81,8 @@ def save_last_synced_time():
     with open(LAST_SYNCED_FILE, 'w') as file:
         json.dump(data, file)
 
-# Function to save tasks to the JSON file without triggering an immediate sync
-def save_tasks_to_json(tasks, source=""):
+# Function to save tasks to the JSON file and trigger sync if needed
+def save_tasks_to_json(tasks, source="", skip_sync=False):
     try:
         with open(TASKS_FILE, 'r', encoding='utf-8') as file:
             existing_tasks = json.load(file)
@@ -95,6 +95,34 @@ def save_tasks_to_json(tasks, source=""):
             json.dump(tasks, file, ensure_ascii=False, indent=2, default=str)
         if source:
             print(f"Update from {source}, tasks saved to {TASKS_FILE}.")
+            
+        # Check if called from main.py (in which case we should skip sync)
+        called_from_main = False
+        import inspect
+        call_stack = inspect.stack()
+        for frame in call_stack:
+            if frame.filename.endswith('main.py'):
+                called_from_main = True
+                break
+        
+        # Skip sync if requested or if called from main.py
+        if skip_sync or called_from_main:
+            if skip_sync:
+                print("Skipping automatic sync as requested.")
+            elif called_from_main:
+                print("Skipping automatic sync because called from main.py.")
+            return True
+            
+        # Import Sync module here to prevent circular import
+        try:
+            import Sync
+            print("Running synchronization...")
+            Sync.sync_local_tasks_to_notion_and_todoist()
+        except ImportError:
+            print("Warning: Could not import Sync module")
+        except Exception as e:
+            print(f"Error during synchronization: {str(e)}")
+            
         return True
     else:
         if source:

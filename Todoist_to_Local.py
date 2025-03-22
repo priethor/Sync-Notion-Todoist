@@ -4,7 +4,6 @@ import subprocess
 import pytz
 from datetime import datetime, timezone, timedelta
 from helper import *
-from Sync import sync_local_tasks_to_notion_and_todoist
 
 # Define the GMT+8 timezone
 GMT_PLUS_8 = pytz.timezone('Etc/GMT-8')
@@ -45,17 +44,46 @@ def create_notion_task(task_name, task_description, task_due_date, todoist_task_
     print(f"Task '{task_name}' created successfully in Notion")
 
 # Main function
-def sync_todoist_to_json():
+def sync_todoist_to_json(debug_mode=False):
+    print("\n=== Starting Todoist to JSON Sync ===\n")
+    
+    # Log the steps if in debug mode
+    if debug_mode:
+        print("DEBUG: Loading local tasks from JSON...")
+    
     tasks = load_tasks_from_json()
+    
+    if debug_mode:
+        print(f"DEBUG: Loaded {len(tasks)} tasks from local JSON")
+        print("DEBUG: Getting tasks from Todoist API...")
+    
     todoist_tasks = get_todoist_tasks()
     completed_todoist_tasks = get_completed_todoist_tasks()
+    
+    if debug_mode:
+        print(f"DEBUG: Retrieved {len(todoist_tasks)} active tasks and {len(completed_todoist_tasks)} completed tasks from Todoist")
+        print("DEBUG: Getting tasks from Notion API...")
+    
     notion_tasks = get_notion_tasks()
+    
+    if debug_mode:
+        print(f"DEBUG: Retrieved {len(notion_tasks)} tasks from Notion")
+        print("DEBUG: Creating lookup dictionaries...")
 
     # Create dictionaries for quick lookups
     tasks_dict = {int(task['todoist-id']): task for task in tasks}
     notion_tasks_id_dict = {task['properties']['ID']['number']: task for task in notion_tasks if 'ID' in task['properties'] and 'number' in task['properties']['ID']}
     todoist_tasks_dict = {int(task['id']): task for task in todoist_tasks}
     completed_todoist_tasks_dict = {int(task['task_id']): task for task in completed_todoist_tasks}
+
+    if debug_mode:
+        print(f"DEBUG: Created lookup dictionaries:")
+        print(f"  - Local tasks with Todoist IDs: {len(tasks_dict)}")
+        print(f"  - Notion tasks with Todoist IDs: {len(notion_tasks_id_dict)}")
+        print(f"  - Active Todoist tasks: {len(todoist_tasks_dict)}")
+        print(f"  - Completed Todoist tasks: {len(completed_todoist_tasks_dict)}")
+        print("\nDEBUG: Beginning task comparison between Todoist and local JSON...")
+        print("--------------------------------------------------------------")
 
     modified = False
     
@@ -82,35 +110,68 @@ def sync_todoist_to_json():
                 # Adjust the format to include the colon in the timezone offset
                 task_due_date = task_due_date[:-2] + ':' + task_due_date[-2:]
             create_notion_task(task_name, task_description, task_due_date, todoist_task_id, notion_tasks_id_dict, todoist_task_labels)
+            # This is a new task created in Todoist, no need to set sync_needed flag
+            # as it's already being created in Notion by the create_notion_task function
             modified = True
 
     # Update local JSON file based on Todoist tasks
     for task in tasks:
         todoist_task_id = int(task['todoist-id'])
         task_changed = False
+        task_name = task.get('name', 'Unknown')
+        
+        print(f"Checking task '{task_name}' (Todoist ID: {todoist_task_id}) from Todoist:")
+        print(f"  - Current state in local JSON:")
+        print(f"    - Name: '{task_name}'")
+        print(f"    - Completed: {task.get('completed', False)}")
+        print(f"    - Due date: {task.get('due_date', None)}")
+        print(f"    - Labels: {task.get('labels', [])}")
 
         if todoist_task_id in completed_todoist_tasks_dict:
-            if not task['completed']:
+            completed_task = completed_todoist_tasks_dict[todoist_task_id]
+            print(f"  - Task found in completed Todoist tasks")
+            
+            # Ensure boolean comparison for completion status
+            local_completed = bool(task.get('completed', False))
+            if not local_completed:
+                print(f"  - Completion changed: {local_completed} -> True")
+                print(f"    - Original value: {task['completed']} (local)")
                 task['completed'] = True
                 task_changed = True
+                
         elif todoist_task_id in todoist_tasks_dict:
             todoist_task = todoist_tasks_dict[todoist_task_id]
-            if task['completed']:
+            print(f"  - Current state in Todoist:")
+            print(f"    - Name: '{todoist_task['content']}'")
+            print(f"    - Completed: {False}") # Active tasks are not completed
+            print(f"    - Labels: {todoist_task['labels']}")
+            
+            # Handle completion status (ensure boolean comparison)
+            local_completed = bool(task.get('completed', False))
+            if local_completed:
+                print(f"  - Completion changed: {local_completed} -> False")
+                print(f"    - Original value: {task['completed']} (local)")
                 task['completed'] = False
                 task_changed = True
+                
+            # Handle name changes
             if task['name'] != todoist_task['content']:
+                print(f"  - Name changed: '{task['name']}' -> '{todoist_task['content']}'")
                 task['name'] = todoist_task['content']
                 task_changed = True
             
-            # Check if 'due' attribute exists and is not None
+            # Handle due date changes
+            due_date = None
             if 'due' in todoist_task and todoist_task['due'] is not None:
                 due = todoist_task['due']
-                due_date = due.get('datetime') if 'datetime' in due else due.get('date', '')
-                if due_date:
-                    if due_date.endswith('Z'):
-                        due_date_obj = datetime.strptime(due_date, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
+                due_date_raw = due.get('datetime') if 'datetime' in due else due.get('date', '')
+                print(f"    - Due date (raw): {due_date_raw}")
+                
+                if due_date_raw:
+                    if due_date_raw.endswith('Z'):
+                        due_date_obj = datetime.strptime(due_date_raw, '%Y-%m-%dT%H:%M:%SZ').replace(tzinfo=timezone.utc)
                     else:
-                        due_date_obj = datetime.fromisoformat(due_date)
+                        due_date_obj = datetime.fromisoformat(due_date_raw)
                     
                     if due_date_obj.tzinfo is None:
                         # Assume the local time is in a specific timezone, e.g., GMT+08:00
@@ -119,35 +180,52 @@ def sync_todoist_to_json():
                     due_date = due_date_obj.astimezone(GMT_PLUS_8).strftime('%Y-%m-%dT%H:%M:%S%z')
                     # Adjust the format to include the colon in the timezone offset
                     due_date = due_date[:-2] + ':' + due_date[-2:]
-                if task['due_date'] != due_date:
-                    task['due_date'] = due_date
-                    task_changed = True
-            else:
-                if task['due_date'] is not None:
-                    task['due_date'] = None
-                    task_changed = True
-        
-            if set(task['labels']) != set(todoist_task['labels']):
+                    
+            print(f"    - Due date (formatted): {due_date}")
+            
+            # Check for due date changes, handling None values properly
+            due_date_changed = False
+            if (task['due_date'] is None and due_date is not None) or \
+               (task['due_date'] is not None and due_date is None) or \
+               (task['due_date'] != due_date):
+                print(f"  - Due date changed: {task['due_date']} -> {due_date}")
+                task['due_date'] = due_date
+                task_changed = True
+                due_date_changed = True
+            
+            # Handle label changes using set comparison
+            labels_changed = False
+            if set(task.get('labels', [])) != set(todoist_task['labels']):
+                print(f"  - Labels changed: {task.get('labels', [])} -> {todoist_task['labels']}")
                 task['labels'] = todoist_task['labels']
                 task_changed = True
+                labels_changed = True
 
         # Mark task as deleted if it no longer exists in Todoist
         if todoist_task_id not in todoist_tasks_dict and todoist_task_id not in completed_todoist_tasks_dict:
-            if not task['deleted']:
+            print(f"  - Task no longer exists in Todoist")
+            if not task.get('deleted', False):
+                print(f"  - Marking task as deleted")
                 task['deleted'] = True
                 task_changed = True
 
-        # Update the last_modified timestamp if the task has changed
+        # Update the sync flags if the task has changed
         if task_changed:
-            task['last_modified'] = datetime.now(timezone.utc).isoformat()
+            print(f"  - Task changed in Todoist, marking for sync to Notion")
+            
+            # Simply mark for sync to Notion
+            task['sync_to_notion'] = True
+            print(f"  - Task marked for sync to Notion")
             modified = True
+        else:
+            print(f"  - No changes detected")
 
     # Only save if there were changes
     if modified:
-        if save_tasks_to_json(tasks, "Todoist"):
-            # Only run sync if changes were saved
-            sync_local_tasks_to_notion_and_todoist()
+        save_tasks_to_json(tasks, "Todoist")
 
 # Run the main function
 if __name__ == "__main__":
-    sync_todoist_to_json()
+    import sys
+    debug_mode = "--debug" in sys.argv
+    sync_todoist_to_json(debug_mode)
