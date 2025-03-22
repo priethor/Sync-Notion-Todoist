@@ -25,6 +25,10 @@ todoist_headers = {
     'Content-Type': 'application/json'
 }
 
+# Constants
+TASKS_FILE = 'tasks.json'
+LAST_SYNCED_FILE = 'last_synced_time.json'
+
 # Function to clear the console
 def cls():
     os.system('cls' if os.name == 'nt' else 'clear')
@@ -63,33 +67,48 @@ def get_completed_todoist_tasks():
     response.raise_for_status()
     return response.json().get('items', [])
 
-# Function to save tasks to the JSON file
-def save_tasks_to_json(tasks, filename, name):
+# Function to get last synced time from JSON file
+def get_last_synced_time():
     try:
-        with open(filename, 'r', encoding='utf-8') as file:
+        with open(LAST_SYNCED_FILE, 'r') as file:
+            return json.load(file)['last_synced_time']
+    except (FileNotFoundError, KeyError):
+        return None
+
+# Function to save last synced time to JSON file
+def save_last_synced_time():
+    data = {'last_synced_time': datetime.now(timezone.utc).isoformat()}
+    with open(LAST_SYNCED_FILE, 'w') as file:
+        json.dump(data, file)
+
+# Function to save tasks to the JSON file without triggering an immediate sync
+def save_tasks_to_json(tasks, source=""):
+    try:
+        with open(TASKS_FILE, 'r', encoding='utf-8') as file:
             existing_tasks = json.load(file)
     except FileNotFoundError:
         existing_tasks = []
 
+    # Only save if there are actual changes
     if tasks != existing_tasks:
-        with open(filename, 'w', encoding='utf-8') as file:
+        with open(TASKS_FILE, 'w', encoding='utf-8') as file:
             json.dump(tasks, file, ensure_ascii=False, indent=2, default=str)
-        print(f"Update from " + name + ", tasks saved to " + filename + ".")
-        # Run Sync directly without subprocess
-        from Sync import sync_local_tasks_to_notion_and_todoist
-        sync_local_tasks_to_notion_and_todoist()
-        print(f"Sync completed")
+        if source:
+            print(f"Update from {source}, tasks saved to {TASKS_FILE}.")
+        return True
     else:
-        print(f"No changes detected from " + name)
-
+        if source:
+            print(f"No changes detected from {source}")
+        return False
 
 # Function to load tasks from the JSON file
-def load_tasks_from_json(filename):
+def load_tasks_from_json():
     try:
-        with open(filename, 'r', encoding='utf-8') as file:
+        with open(TASKS_FILE, 'r', encoding='utf-8') as file:
             tasks = json.load(file)
     except FileNotFoundError:
         tasks = []
+    
     # Ensure all tasks have the 'deleted' field
     for task in tasks:
         if 'deleted' not in task:

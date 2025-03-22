@@ -2,31 +2,8 @@ import json
 import os
 from datetime import datetime, timezone
 from dateutil.parser import parse
+import requests
 from helper import *
-
-# Function to get tasks from local JSON file
-def get_local_tasks(file_path='tasks.json'):
-    with open(file_path, 'r') as file:
-        return json.load(file)
-
-# Function to get last synced time from JSON file
-def get_last_synced_time(file_path='last_synced_time.json'):
-    try:
-        with open(file_path, 'r') as file:
-            return json.load(file)['last_synced_time']
-    except (FileNotFoundError, KeyError):
-        return None
-
-# Function to save last synced time to JSON file
-def save_last_synced_time(file_path='last_synced_time.json'):
-    data = {'last_synced_time': datetime.now(timezone.utc).isoformat()}
-    with open(file_path, 'w') as file:
-        json.dump(data, file)
-
-# Function to save tasks to local JSON file
-def save_local_tasks(tasks, file_path='tasks.json'):
-    with open(file_path, 'w') as file:
-        json.dump(tasks, file, ensure_ascii=False, indent=2, default=str)
 
 # Function to delete a task in Notion
 def delete_notion_task(task_id):
@@ -155,27 +132,45 @@ def reopen_todoist_task(task_id):
 
 # Main function to sync tasks from local JSON file to Notion and Todoist
 def sync_local_tasks_to_notion_and_todoist():
-    tasks = get_local_tasks()
+    tasks = load_tasks_from_json()
     tasks_to_keep = []
+    changes_made = False
 
     for task in tasks:
         if task.get('deleted', False):
             # Delete task from Notion and Todoist if marked as deleted
             if 'notion-id' in task:
                 delete_notion_task(task['notion-id'])
+                changes_made = True
             if 'todoist-id' in task:
                 delete_todoist_task(task['todoist-id'])
+                changes_made = True
         else:
             # Sync task to Notion and Todoist if not marked as deleted
-            sync_notion_task(task)
-            sync_todoist_task(task)
+            last_synced_time = get_last_synced_time()
+            task_modified = not last_synced_time or task['last_modified'] > last_synced_time
+            
+            if task_modified:
+                changes_made = True
+                sync_notion_task(task)
+                sync_todoist_task(task)
+            
             tasks_to_keep.append(task)
 
-    # Save the updated list of tasks to the local JSON file
-    save_local_tasks(tasks_to_keep)
+    # Only save if we actually made changes
+    if tasks_to_keep != tasks:
+        # Save the updated list of tasks to the local JSON file
+        save_tasks_to_json(tasks_to_keep)
+        changes_made = True
+    
+    # Only update the last synced time if changes were made
+    if changes_made:
+        save_last_synced_time()
+        print("Sync completed with changes")
+    else:
+        print("Sync completed - no changes needed")
 
-    # Save the last synced time after syncing all tasks
-    save_last_synced_time()
-
-# Run the sync function
-sync_local_tasks_to_notion_and_todoist()
+# This is not automatically run when imported,
+# it's only run when explicitly called
+if __name__ == "__main__":
+    sync_local_tasks_to_notion_and_todoist()

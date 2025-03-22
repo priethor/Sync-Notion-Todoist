@@ -4,6 +4,7 @@ import subprocess
 import pytz
 from datetime import datetime, timezone, timedelta
 from helper import *
+from Sync import sync_local_tasks_to_notion_and_todoist
 
 # Define the GMT+8 timezone
 GMT_PLUS_8 = pytz.timezone('Etc/GMT-8')
@@ -45,7 +46,7 @@ def create_notion_task(task_name, task_description, task_due_date, todoist_task_
 
 # Main function
 def sync_todoist_to_json():
-    tasks = load_tasks_from_json('tasks.json')
+    tasks = load_tasks_from_json()
     todoist_tasks = get_todoist_tasks()
     completed_todoist_tasks = get_completed_todoist_tasks()
     notion_tasks = get_notion_tasks()
@@ -56,6 +57,8 @@ def sync_todoist_to_json():
     todoist_tasks_dict = {int(task['id']): task for task in todoist_tasks}
     completed_todoist_tasks_dict = {int(task['task_id']): task for task in completed_todoist_tasks}
 
+    modified = False
+    
     # Create new Notion tasks for Todoist tasks that don't exist in Notion
     for todoist_task in todoist_tasks:
         task_name = todoist_task['content']
@@ -79,6 +82,7 @@ def sync_todoist_to_json():
                 # Adjust the format to include the colon in the timezone offset
                 task_due_date = task_due_date[:-2] + ':' + task_due_date[-2:]
             create_notion_task(task_name, task_description, task_due_date, todoist_task_id, notion_tasks_id_dict, todoist_task_labels)
+            modified = True
 
     # Update local JSON file based on Todoist tasks
     for task in tasks:
@@ -136,7 +140,14 @@ def sync_todoist_to_json():
         # Update the last_modified timestamp if the task has changed
         if task_changed:
             task['last_modified'] = datetime.now(timezone.utc).isoformat()
+            modified = True
 
-    save_tasks_to_json(tasks, 'tasks.json', "Todoist")
+    # Only save if there were changes
+    if modified:
+        if save_tasks_to_json(tasks, "Todoist"):
+            # Only run sync if changes were saved
+            sync_local_tasks_to_notion_and_todoist()
 
-sync_todoist_to_json()
+# Run the main function
+if __name__ == "__main__":
+    sync_todoist_to_json()

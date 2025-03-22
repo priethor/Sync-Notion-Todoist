@@ -1,45 +1,46 @@
-import subprocess
 import time
+import importlib
+import sys
+import traceback
 
-def run_script(script_name):
-    """Run a Python script and print its output in real-time."""
+def run_module(module_name):
+    """Run a Python module by importing it and handling any errors."""
     try:
-        process = subprocess.Popen(["python", script_name], stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)
-        while True:
-            output = process.stdout.readline()
-            if output == '' and process.poll() is not None:
-                break
-            if output:
-                print(output.strip())
-        return process.poll()
-    except subprocess.CalledProcessError as e:
-        if e.returncode == 1:
-            print("Error: Invalid Notion API token. Please check your NOTION_API_TOKEN environment variable.")
-        elif e.returncode == 2:
-            print("Error: Invalid Notion Database ID. Please check your NOTION_DATABASE_ID environment variable.")
-        elif e.returncode == 3:
-            print("Error: Invalid Todoist API token. Please check your TODOIST_API_TOKEN environment variable.")
-        return None
+        # Import the module dynamically
+        module = importlib.import_module(module_name)
+        print(f"Successfully executed {module_name}")
+        return True
+    except Exception as e:
+        print(f"Error executing {module_name}: {str(e)}")
+        traceback.print_exc()
+        
+        if isinstance(e, SystemExit):
+            if e.code == 1:
+                print("Error: Invalid Notion API token. Please check your NOTION_API_TOKEN environment variable.")
+            elif e.code == 2:
+                print("Error: Invalid Notion Database ID. Please check your NOTION_DATABASE_ID environment variable.")
+            elif e.code == 3:
+                print("Error: Invalid Todoist API token. Please check your TODOIST_API_TOKEN environment variable.")
+            
+        return False
 
 def main():
     try:
         while True:
-            # Run Notion_to_Local.py
-            print("Running Notion_to_Local.py...")
-            result = run_script("Notion_to_Local.py")
-            if result is None:
+            # Run Notion_to_Local directly
+            print("\nSyncing from Notion to local...")
+            if not run_module("Notion_to_Local"):
                 break
             time.sleep(4)
             
-            # Run Todoist_to_Local.py
-            print("Running Todoist_to_Local.py...")
-            result = run_script("Todoist_to_Local.py")
-            if result is None:
+            # Run Todoist_to_Local directly
+            print("\nSyncing from Todoist to local...")
+            if not run_module("Todoist_to_Local"):
                 break
             time.sleep(4)
             
     except KeyboardInterrupt:
-        print("Exiting gracefully...")
+        print("\nExiting gracefully...")
 
 if __name__ == "__main__":
     main()

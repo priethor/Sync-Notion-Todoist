@@ -4,13 +4,13 @@ import sys
 import subprocess
 from datetime import datetime, timezone, timedelta
 from helper import *
+from Sync import sync_local_tasks_to_notion_and_todoist
 
 # Define the GMT+8 timezone
 GMT_PLUS_8 = timezone(timedelta(hours=8))
 
 # Function to create a task in Todoist
 def create_todoist_task(task_name, existing_tasks, completed_tasks):
-
     for task in existing_tasks:
         if task['content'] == task_name:
             print(f"Task '{task_name}' already exists in Todoist, skipping...")
@@ -64,7 +64,7 @@ def sync_notion_to_json():
     if not notion_tasks:
         return
 
-    tasks = load_tasks_from_json('tasks.json')
+    tasks = load_tasks_from_json()
     tasks_dict = {task['notion-id']: task for task in tasks}
     
     # Get Todoist tasks once at the beginning
@@ -72,6 +72,7 @@ def sync_notion_to_json():
     completed_todoist_tasks = get_completed_todoist_tasks()
 
     notion_task_ids = set()
+    modified = False
 
     for task in notion_tasks:
         task_id = task['id']
@@ -108,6 +109,7 @@ def sync_notion_to_json():
 
             if task_changed:
                 task_data['last_modified'] = datetime.now(timezone.utc).astimezone(GMT_PLUS_8).isoformat()
+                modified = True
 
         else:
             # Create a task in Todoist and get the task ID - using the pre-fetched lists
@@ -137,13 +139,21 @@ def sync_notion_to_json():
             }
 
             tasks.append(task_data)
+            modified = True
 
     # Mark tasks as deleted if they are not found in the Notion database
     for task in tasks:
         if task['notion-id'] not in notion_task_ids:
             task['deleted'] = True
             task['last_modified'] = datetime.now(timezone.utc).astimezone(GMT_PLUS_8).isoformat()
+            modified = True
 
-    save_tasks_to_json(tasks, 'tasks.json', "Notion")
+    # Only save if there were changes
+    if modified:
+        if save_tasks_to_json(tasks, "Notion"):
+            # Only run sync if changes were saved
+            sync_local_tasks_to_notion_and_todoist()
 
-sync_notion_to_json()
+# Run the main function
+if __name__ == "__main__":
+    sync_notion_to_json()
