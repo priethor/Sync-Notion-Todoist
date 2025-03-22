@@ -30,25 +30,30 @@ def create_todoist_task(task_name, existing_tasks, completed_tasks):
     print(f"Task '{task_name}' created successfully in Todoist")
     return response.json()['id'], False
 
-# Function to update the "ID" column of a Notion task with the Todoist task ID
-def update_notion_task_id(notion_task_id, todoist_task_id):
+# Function to update Notion task properties
+def update_notion_task_properties(notion_task_id, properties_dict):
+    """
+    Update multiple properties of a Notion task in a single API call.
+    
+    Args:
+        notion_task_id: The ID of the Notion task to update
+        properties_dict: Dictionary of properties to update (e.g. {'ID': 123, 'Done': True})
+    """
     url = f'https://api.notion.com/v1/pages/{notion_task_id}'
+    
+    # Convert the simple properties dictionary to Notion's expected format
+    notion_properties = {}
+    for key, value in properties_dict.items():
+        if key == 'ID':
+            notion_properties['ID'] = {'number': int(value)}
+        elif key == 'Done':
+            notion_properties['Done'] = {'checkbox': value}
+        # Add other property types as needed
+    
     payload = {
-        'properties': {
-            'ID': {'number': int(todoist_task_id)}
-        }
+        'properties': notion_properties
     }
-    response = requests.patch(url, headers=notion_headers, data=json.dumps(payload))
-    response.raise_for_status()
-
-# Function to update the "Done" status of a Notion task
-def update_notion_task_status(notion_task_id, completed):
-    url = f'https://api.notion.com/v1/pages/{notion_task_id}'
-    payload = {
-        'properties': {
-            'Done': {'checkbox': completed}
-        }
-    }
+    
     response = requests.patch(url, headers=notion_headers, data=json.dumps(payload))
     response.raise_for_status()
 
@@ -107,11 +112,19 @@ def sync_notion_to_json():
         else:
             # Create a task in Todoist and get the task ID - using the pre-fetched lists
             todoist_task_id, is_completed = create_todoist_task(task_name, existing_todoist_tasks, completed_todoist_tasks)
+            
+            # Prepare updates for Notion
+            updates = {}
+            
             if todoist_task_id is None and is_completed:
                 task_completed = True
-                update_notion_task_status(task_id, True)
+                updates['Done'] = True
             elif todoist_task_id:
-                update_notion_task_id(task_id, todoist_task_id)
+                updates['ID'] = todoist_task_id
+                
+            # If we have any updates, send them in a single API call
+            if updates:
+                update_notion_task_properties(task_id, updates)
 
             task_data = {
                 'notion-id': task_id,
