@@ -9,9 +9,7 @@ from helper import *
 GMT_PLUS_8 = timezone(timedelta(hours=8))
 
 # Function to create a task in Todoist
-def create_todoist_task(task_name):
-    existing_tasks = get_todoist_tasks()
-    completed_tasks = get_completed_todoist_tasks()
+def create_todoist_task(task_name, existing_tasks, completed_tasks):
 
     for task in existing_tasks:
         if task['content'] == task_name:
@@ -104,7 +102,10 @@ def sync_notion_to_json():
 
         else:
             # Create a task in Todoist and get the task ID
-            todoist_task_id, is_completed = create_todoist_task(task_name)
+            existing_tasks = get_todoist_tasks()
+            completed_tasks = get_completed_todoist_tasks()
+
+            todoist_task_id, is_completed = create_todoist_task(task_name, existing_tasks, completed_tasks)
             if todoist_task_id is None and is_completed:
                 task_completed = True
                 update_notion_task_status(task_id, True)
