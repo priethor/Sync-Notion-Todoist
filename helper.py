@@ -76,9 +76,10 @@ def save_tasks_to_json(tasks, filename, name):
             json.dump(tasks, file, ensure_ascii=False, indent=2, default=str)
         print(f"Update from " + name + ", tasks saved to " + filename + ".")
         # Run Sync.py after saving the JSON data
-        result = subprocess.run(["python", "Sync.py"], capture_output=True, text=True)
+        from Sync import sync_local_tasks_to_notion_and_todoist
+        sync_local_tasks_to_notion_and_todoist()
         if result.returncode == 0:
-            print("Sync.py executed successfully.")
+            print(f"Output: {result.stdout}")
         else:
             print(f"Sync.py execution failed with error: {result.stderr}")
     else:
